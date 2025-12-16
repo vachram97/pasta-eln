@@ -7,8 +7,8 @@ import webbrowser
 from enum import Enum
 from pathlib import Path
 from typing import Any
-from PySide6.QtCore import QEvent, QUrl, Slot
-from PySide6.QtGui import QDesktopServices, QIcon, QPixmap, QShortcut
+from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, QRect, QUrl, Slot, Qt
+from PySide6.QtGui import QDesktopServices, QIcon, QMouseEvent, QPixmap, QShortcut
 from PySide6.QtWidgets import QFileDialog, QLabel, QMainWindow
 from pasta_eln import __version__
 from ..backendWorker.worker import Task
@@ -49,6 +49,8 @@ class MainWindow(QMainWindow):
     self.comm.formDoc.connect(self.formDoc)
     self.comm.changeSidebar.connect(self.paint)
     self.comm.backendThread.worker.beSendTaskReport.connect(self.showReport)
+    self.comm.changeProject.connect(self.onProjectChanged)
+    self.comm.changeTable.connect(self.onTableChanged)
 
     # GUI
     self.setWindowTitle(f"PASTA-ELN {__version__}")
@@ -101,8 +103,115 @@ class MainWindow(QMainWindow):
     self.sidebar = Sidebar(self.comm)                                                   # sidebar with buttons
     mainLayout.addWidget(self.sidebar)
     mainLayout.addWidget(body)
+    
+    # Auto-hide sidebar functionality
+    self.sidebarHidden = False
+    self.hoverZoneWidth = 10  # Width of hover zone on left border
+    self.setMouseTracking(True)  # Enable mouse tracking for the main window
+    mainWidget.setMouseTracking(True)  # Enable mouse tracking for central widget
+    body.setMouseTracking(True)  # Enable mouse tracking for body
+    
+    # Animation for sidebar show/hide
+    self.sidebarAnimation = QPropertyAnimation(self.sidebar, b"maximumWidth")
+    self.sidebarAnimation.setDuration(200)  # 200ms animation
+    
+    # Install event filter on body and sidebar to detect mouse movements
+    body.installEventFilter(self)
+    self.sidebar.installEventFilter(self)
+    
     self.paint()
 
+
+  @Slot(str, str)
+  def onProjectChanged(self, projID: str, item: str) -> None:
+    """
+    Handle project change - hide sidebar when a specific project is opened
+    
+    Args:
+      projID (str): project ID
+      item (str): item ID
+    """
+    if projID and projID != '':
+      # A specific project is opened, hide sidebar
+      self.hideSidebar()
+    else:
+      # No project selected, show sidebar
+      self.showSidebar()
+  
+  @Slot(str, str)
+  def onTableChanged(self, docType: str, projectID: str) -> None:
+    """
+    Handle table change - show sidebar when viewing project list
+    
+    Args:
+      docType (str): document type
+      projectID (str): project ID
+    """
+    if docType == 'x0' or not projectID or projectID == '':
+      # Viewing project list or no project, show sidebar
+      self.showSidebar()
+    else:
+      # Viewing a specific project's table, hide sidebar
+      self.hideSidebar()
+  
+  def hideSidebar(self) -> None:
+    """Hide the sidebar with animation"""
+    if not self.sidebarHidden:
+      self.sidebarHidden = True
+      currentWidth = self.sidebar.width() if self.sidebar.width() > 0 else self.comm.configuration['GUI']['sidebarWidth']
+      self.sidebarAnimation.setStartValue(currentWidth)
+      self.sidebarAnimation.setEndValue(0)
+      self.sidebarAnimation.start()
+      self.sidebar.setMaximumWidth(0)
+      self.sidebar.hide()
+  
+  def showSidebar(self) -> None:
+    """Show the sidebar with animation"""
+    if self.sidebarHidden:
+      self.sidebarHidden = False
+      sidebarWidth = self.comm.configuration['GUI']['sidebarWidth']
+      self.sidebar.setMaximumWidth(sidebarWidth)
+      self.sidebar.show()
+      self.sidebarAnimation.setStartValue(0)
+      self.sidebarAnimation.setEndValue(sidebarWidth)
+      self.sidebarAnimation.start()
+  
+  def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+    """
+    Filter events to detect mouse near left border
+    
+    Args:
+      obj: object that received the event
+      event: event
+      
+    Returns:
+      bool: True if event was handled
+    """
+    if event.type() == QEvent.Type.MouseMove:
+      mouseEvent = QMouseEvent(event)
+      # Get mouse position relative to main window
+      mousePos = self.mapFromGlobal(mouseEvent.globalPosition().toPoint())
+      mouseX = mousePos.x()
+      sidebarWidth = self.comm.configuration['GUI']['sidebarWidth']
+      
+      # If mouse is over sidebar, keep it visible
+      if obj == self.sidebar:
+        if self.sidebarHidden and self.comm.projectID and self.comm.projectID != '':
+          self.showSidebar()
+        return False  # Let sidebar handle its own events
+      
+      # Only handle auto-hide/show if a project is open
+      if self.comm.projectID and self.comm.projectID != '':
+        if self.sidebarHidden:
+          # Sidebar is hidden - show it if mouse is near left border
+          if mouseX <= self.hoverZoneWidth:
+            self.showSidebar()
+        else:
+          # Sidebar is visible - hide it if mouse moved away from sidebar and hover zone
+          if mouseX > sidebarWidth + self.hoverZoneWidth:
+            self.hideSidebar()
+    
+    return super().eventFilter(obj, event)
 
   @Slot(str)
   def paint(self, _:str='') -> None:

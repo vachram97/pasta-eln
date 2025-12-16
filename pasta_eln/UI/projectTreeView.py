@@ -4,7 +4,7 @@ import os
 from enum import Enum
 from pathlib import Path
 from typing import Any
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QDropEvent, QEventPoint, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QAbstractItemView, QMenu, QMessageBox, QTreeView, QWidget
 from ..backendWorker.worker import Task
@@ -33,6 +33,7 @@ class TreeView(QTreeView):
     self.setDefaultDropAction(Qt.DropAction.MoveAction)
     self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
     self.doubleClicked.connect(self.tree2Clicked)
+    self.clicked.connect(self.treeClicked)  # Single click to show details
 
 
   def contextMenuEvent(self, p:QEventPoint) -> None:                                  # type: ignore[override]
@@ -167,6 +168,19 @@ class TreeView(QTreeView):
       self.scrollTo(item.index(), QAbstractItemView.EnsureVisible)                # type: ignore[attr-defined]
     return
 
+
+  def treeClicked(self, index: QModelIndex) -> None:
+    """
+    after single-click on tree leaf: show details
+    """
+    item = self.model().itemFromIndex(index)                                       # type: ignore[attr-defined]
+    if item is None or item.data() is None:
+      return
+    hierStack = item.data()['hierStack'].split('/')
+    docID = hierStack[-1]
+    # Show details for all items including folders
+    self.comm.changeDetails.emit(docID)
+    return
 
   def tree2Clicked(self) -> None:
     """

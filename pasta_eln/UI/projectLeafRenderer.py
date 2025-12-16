@@ -2,10 +2,11 @@
 import base64
 import logging
 from typing import Any
-from PySide6.QtCore import QMargins, QModelIndex, QPoint, QRectF, QSize, Qt, Slot
-from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QStaticText, QTextDocument
+from PySide6.QtCore import QAbstractItemModel, QEvent, QMargins, QModelIndex, QPoint, QRect, QRectF, QSize, Qt, Slot
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen, QPixmap, QStaticText, QTextDocument
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
+from PySide6.QtWidgets import QApplication, QPushButton, QStyle, QStyleOptionButton, QStyledItemDelegate, QStyleOptionViewItem
+from ..backendWorker.worker import Task
 from ..fixedStringsJson import DO_NOT_RENDER, defaultDataHierarchyNode
 from ..textTools.handleDictionaries import doc2markdown
 from ..textTools.stringChanges import markdownEqualizer
@@ -30,6 +31,10 @@ class ProjectLeafRenderer(QStyledItemDelegate):
     self.penHighlight.setWidth(2)
     self.leafWidth          = -1
     self.docs:dict[str,Any] = {}   # docID: {'size':QSize, 'markdown':str, 'hidden':bool, 'index':QModelIndex}
+    self.buttonHeight       = 30
+    self.buttonWidth        = 30
+    self.buttonSpacing      = 5
+    self.buttonY            = 5  # Y position of buttons from top
 
 
   def paint(self, painter:QPainter, option:QStyleOptionViewItem, index:QModelIndex) -> None:    # type: ignore
@@ -107,6 +112,10 @@ class ProjectLeafRenderer(QStyledItemDelegate):
         topLeft2nd     = option.rect.topRight()   - QPoint(self.widthImage+self.frameSize+1,-self.frameSize)# type: ignore[attr-defined]
         image = QSvgRenderer(bytearray(self.docs.get(docID, {}).get('image',''), encoding='utf-8'))
         image.render(painter,    QRectF(topLeft2nd, bottomRight2nd))
+    
+    # Draw buttons for folder elements (docType starts with 'x') when expanded
+    if docType[0][0] == 'x' and data['gui'][0]:
+      self.drawFolderButtons(painter, option, docID, data)
     return
 
 
@@ -187,6 +196,130 @@ class ProjectLeafRenderer(QStyledItemDelegate):
       painter.setPen(self.penDefault)
     return
 
+
+  def drawFolderButtons(self, painter: QPainter, option: QStyleOptionViewItem, docID: str, data: dict[str, Any]) -> None:
+    """
+    Draw buttons for folder elements: Create subfolder, Create sample, Create measurement
+    
+    Args:
+      painter: QPainter instance
+      option: Style option for the item
+      docID: Document ID
+      data: Item data
+    """
+    x0, y0 = option.rect.topLeft().toTuple()  # type: ignore[attr-defined]
+    x1, _ = option.rect.topRight().toTuple()  # type: ignore[attr-defined]
+    
+    # Button definitions: (icon_name, command_type)
+    buttons = [
+      ('fa5s.folder-plus', 'subfolder'),
+      ('fa5s.vial', 'sample'),
+      ('fa5s.thermometer-half', 'measurement')
+    ]
+    
+    # Calculate starting position from right side
+    totalButtonsWidth = len(buttons) * self.buttonWidth + (len(buttons) - 1) * self.buttonSpacing
+    buttonX = x1 - totalButtonsWidth - 10  # 10px margin from right edge
+    
+    button = QPushButton()
+    for i, (icon_name, cmd_type) in enumerate(buttons):
+      buttonRect = QRect(
+        buttonX + i * (self.buttonWidth + self.buttonSpacing),
+        y0 + self.buttonY,
+        self.buttonWidth,
+        self.buttonHeight
+      )
+      
+      opt = QStyleOptionButton()
+      opt.state = QStyle.StateFlag.State_Active | QStyle.StateFlag.State_Enabled  # type: ignore[attr-defined]
+      opt.rect = buttonRect
+      opt.text = ''  # No text, icon only
+      
+      # Get icon - required for icon-only buttons
+      try:
+        import qtawesome as qta
+        icon = qta.icon(icon_name, scale_factor=1.2)  # Larger icon
+        if icon and not icon.isNull():
+          opt.icon = icon
+          opt.iconSize = QSize(20, 20)  # Bigger icon size
+        else:
+          continue  # Skip button if icon not available
+      except (ImportError, Exception):
+        continue  # Skip button if qtawesome fails
+      
+      QApplication.style().drawControl(QStyle.ControlElement.CE_PushButton, opt, painter, button)
+    
+    return
+
+  def editorEvent(self, event: QEvent, model: QAbstractItemModel, option: QStyleOptionViewItem, index: QModelIndex) -> bool:
+    """
+    Handle button clicks in folder elements
+    
+    Args:
+      event: Event
+      model: Item model
+      option: Style option
+      index: Model index
+      
+    Returns:
+      bool: True if event was handled
+    """
+    # Only handle mouse button press events
+    if event.type() != QEvent.Type.MouseButtonPress:
+      return False
+    
+    data = index.data(Qt.ItemDataRole.UserRole+1)
+    if not data or data['hierStack'] is None:
+      return False
+    
+    docID = data['hierStack'].split('/')[-1]
+    docType = self.docs.get(docID, {}).get('type', []) or data['docType']
+    
+    # Only handle clicks for folder elements when expanded
+    if docType[0][0] != 'x' or not data['gui'][0]:
+      return False
+    
+    mouseEvent = QMouseEvent(event)
+    mousePos = mouseEvent.position().toPoint() if hasattr(mouseEvent, 'position') else mouseEvent.pos()
+    x0, y0 = option.rect.topLeft().toTuple()  # type: ignore[attr-defined]
+    x1, _ = option.rect.topRight().toTuple()  # type: ignore[attr-defined]
+    
+    # Calculate button positions from right side
+    totalButtonsWidth = 3 * self.buttonWidth + 2 * self.buttonSpacing
+    buttonX = x1 - totalButtonsWidth - 10  # 10px margin from right edge
+    
+    # Check which button was clicked
+    buttonY = y0 + self.buttonY
+    if buttonY <= mousePos.y() <= buttonY + self.buttonHeight:
+      relativeX = mousePos.x() - buttonX
+      buttonIndex = int(relativeX / (self.buttonWidth + self.buttonSpacing))
+      
+      # Check if click is within button bounds
+      buttonStartX = buttonIndex * (self.buttonWidth + self.buttonSpacing)
+      if 0 <= buttonIndex < 3 and 0 <= relativeX - buttonStartX <= self.buttonWidth:
+        hierStack = data['hierStack'].split('/')
+        docTypes = ['x1', 'sample', 'measurement']
+        docTypeToCreate = docTypes[buttonIndex]
+        
+        # Get project ID from hierStack (first element is project ID)
+        projID = hierStack[0] if hierStack else self.comm.projectID
+        
+        # Emit task to create new document
+        self.comm.uiRequestTask.emit(Task.ADD_DOC, {
+          'hierStack': hierStack,
+          'docType': docTypeToCreate,
+          'doc': {'name': f'new {docTypeToCreate}'}
+        })
+        
+        # Refresh the hierarchy to show the new item
+        if projID:
+          # Get showAll setting - default to True if not available
+          showAll = getattr(self.comm, 'showAll', True)
+          self.comm.uiRequestHierarchy.emit(projID, showAll)
+        
+        return True  # Event handled, prevent tree item selection
+    
+    return False
 
   def imageFromDoc(self, doc:dict[str,Any]) -> QPixmap:
     """ Create image from image in doc

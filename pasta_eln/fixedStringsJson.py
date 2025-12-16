@@ -115,7 +115,8 @@ configurationGUI: dict[str, Any] = {
     'loggingLevel': ['Logging level (more->less)', 'INFO', ['DEBUG', 'INFO', 'WARNING', 'ERROR']],
     'autosave': ['Autosave entries in form', 'No', ['Yes', 'No']],
     'showHidden': ['Show hidden items by default', 'Yes', ['Yes','No']],
-    'checkForUpdates': ['Check for updates on startup', 'Yes', ['Yes', 'No']]
+    'checkForUpdates': ['Check for updates on startup', 'Yes', ['Yes', 'No']],
+    'guiProfile': ['GUI Profile', 'classic', ['classic', 'corgroup']]
   },
   'appearance': {
     'theme': ['Color style', 'none', ['amber', 'blue', 'cyan', 'pink', 'purple', 'teal', 'yellow', 'none']],

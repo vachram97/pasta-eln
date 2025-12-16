@@ -74,7 +74,7 @@ class ConfigurationGUI(QDialog):
     """
     widget = QComboBox()                                                     # pylint: disable=qt-local-widget
     labelWidget = QLabel(label)
-    if label == 'Color style':
+    if label == 'Color style' or label == 'GUI Profile':
       widget.setToolTip('For change to take effect, restart PASTA-ELN.')
       labelWidget = QLabel(f'{label} (For change to take effect, restart PASTA-ELN.)')
       labelWidget.setToolTip('For change to take effect, restart PASTA-ELN.')
