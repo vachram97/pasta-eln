@@ -11,6 +11,7 @@ from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import QComboBox, QFileDialog, QLabel, QLayout, QLineEdit, QScrollArea, QTextEdit
 from ..backendWorker.worker import Task
 from ..fixedStringsJson import SORTED_DB_KEYS, cssStyleHtmlEditors, defaultDataHierarchyNode
+from ..miscTools import isDocID
 from ..textTools.handleDictionaries import dict2ul
 from ..textTools.stringChanges import markdownEqualizer, tuple2html
 from ._contextMenu import CommandMenu, executeContextMenu, initContextMenu
@@ -82,8 +83,11 @@ class Details(QScrollArea):
     Args:
       docID (str): document-id
     """
-    self.docID = docID
-    self.comm.uiRequestDoc.emit(self.docID)
+    if docID:
+      self.docID = docID
+      self.comm.uiRequestDoc.emit(self.docID)
+    else:
+      self.hide()
 
 
   @Slot(dict)
@@ -577,7 +581,10 @@ class Details(QScrollArea):
       bgColor = self.comm.palette.get('secondaryDark', 'background-color')
       fgColor = self.comm.palette.get('secondaryText', 'color')
       text.setStyleSheet(f"QTextEdit {{ border: {'1px solid #888' if self.editMode else 'none'}; padding: 3px; {bgColor} {fgColor}}}")
-      text.document().setTextWidth(labelW.width())
+      try:                                    #Temporary debugging until June26 to identify the cause of issue
+        text.document().setTextWidth(labelW.width())
+      except Exception:
+        logging.error('text.document is something erroneous: %s, %s', type(text), type(text.document()))
       if hasattr(self, 'rescaleTexts'):
         self.textEditors.append(text)
       height:int = text.document().size().toTuple()[1]                                    # type:ignore[index]
@@ -626,10 +633,12 @@ class Details(QScrollArea):
             value = '- no link -'
       elif isinstance(value, list):
         value = ', '.join([str(i) for i in value])
-      labelStr = f'<b>{key.capitalize()}</b>: {value}'
+      if isinstance(value, tuple) and len(value)==4 and isDocID(value[0]):
+        value = 'Cannot resolve link'
+      labelStr = f'{key}: {value}'
       if isinstance(value, tuple) and len(value)==4:
         k,v = tuple2html(key, value)
-        labelStr = f'{k.capitalize()}: {v}<br>'
+        labelStr = f'{k}: {v}<br>'
       if isinstance(value, dict):
         newValue = {}
         for k,v in value.items():
@@ -640,7 +649,7 @@ class Details(QScrollArea):
             newValue[k] = v[0]
           else:
             newValue[k] = v
-        labelStr = f'{cssStyleHtmlEditors}{key.capitalize()}: {dict2ul(newValue)}'
+        labelStr = f'{cssStyleHtmlEditors}{key}: {dict2ul(newValue)}'
       if layout is not None:
         if self.editMode and not link and key not in ['id', 'type', 'branch'] and not isinstance(value, (dict, tuple)) and len(str(value)) < 200:
           # Make editable for simple fields (skip dicts, tuples, and very long values)
