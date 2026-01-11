@@ -44,10 +44,27 @@ class Details(QScrollArea):
     self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     self.setWidgetResizable(True)
     self.setWidget(self.mainW)
+    
+    # Apply modern styling to the main widget
+    bgColor = self.comm.palette.get('background', 'background-color')
+    self.mainW.setStyleSheet(f"""
+      QWidget {{
+        {bgColor}
+      }}
+    """)
 
-    headerW, self.headerL = widgetAndLayout('H', self.mainL, spacing='m', top='s', right='s')
+    headerW, self.headerL = widgetAndLayout('H', self.mainL, spacing='m', top='m', right='m', bottom='m', left='m')
     headerW.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     headerW.customContextMenuRequested.connect(lambda pos: initContextMenu(self, pos))
+    # Style the header with a subtle background
+    headerBg = self.comm.palette.get('secondaryDark', 'background-color')
+    headerW.setStyleSheet(f"""
+      QWidget {{
+        {headerBg}
+        border-radius: 8px;
+        padding: 8px;
+      }}
+    """)
     self.labelW = Label('','h1', self.headerL)
     self.headerL.addStretch(1)
     self.btnEdit = IconButton('mdi.pencil', self, [Command.EDIT], self.headerL, tooltip='Edit item', checkable=True)
@@ -58,22 +75,56 @@ class Details(QScrollArea):
     self.specialW.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     self.specialW.customContextMenuRequested.connect(lambda pos: initContextMenu(self, pos))
     self.btnDetails = TextButton('Details', self, [Command.SHOW, 'Details'], self.mainL, \
-                                 'Show / hide details', checkable=True, style='margin-top: 3px')
-    self.metaDetailsW, self.metaDetailsL  = widgetAndLayout('V', self.mainL)
+                                 'Show / hide details', checkable=True, style='margin-top: 10px; font-weight: bold;')
+    self.metaDetailsW, self.metaDetailsL  = widgetAndLayout('V', self.mainL, top='s', left='m', right='m', bottom='s')
+    # Style the details section
+    sectionBg = self.comm.palette.get('secondaryDark', 'background-color')
+    self.metaDetailsW.setStyleSheet(f"""
+      QWidget {{
+        {sectionBg}
+        border-radius: 6px;
+        padding: 10px;
+        margin: 5px;
+      }}
+    """)
     self.btnVendor = TextButton('Vendor metadata', self, [Command.SHOW, 'Vendor'], self.mainL, \
-                                'Show / hide vendor metadata', checkable=True, style='margin-top: 15px')
-    self.metaVendorW, self.metaVendorL = widgetAndLayout('V', self.mainL)
+                                'Show / hide vendor metadata', checkable=True, style='margin-top: 15px; font-weight: bold;')
+    self.metaVendorW, self.metaVendorL = widgetAndLayout('V', self.mainL, top='s', left='m', right='m', bottom='s')
+    self.metaVendorW.setStyleSheet(f"""
+      QWidget {{
+        {sectionBg}
+        border-radius: 6px;
+        padding: 10px;
+        margin: 5px;
+      }}
+    """)
     self.btnUser = TextButton('User metadata', self, [Command.SHOW, 'User'], self.mainL, \
-                              'Show / hide user metadata', checkable=True, style='margin-top: 15px')
-    self.metaUserW, self.metaUserL     = widgetAndLayout('V', self.mainL)
-    self.btnDatabase = TextButton('ELN details', self, [Command.SHOW,'Database'], self.mainL, \
-                                  'Show / hide database details', checkable= True, style='margin-top: 15px')
-    self.metaDatabaseW, self.metaDatabaseL = widgetAndLayout('V', self.mainL)
-    # Save button for edit mode
+                              'Show / hide user metadata', checkable=True, style='margin-top: 15px; font-weight: bold;')
+    self.metaUserW, self.metaUserL     = widgetAndLayout('V', self.mainL, top='s', left='m', right='m', bottom='s')
+    self.metaUserW.setStyleSheet(f"""
+      QWidget {{
+        {sectionBg}
+        border-radius: 6px;
+        padding: 10px;
+        margin: 5px;
+      }}
+    """)
+    # Save button for edit mode - positioned above ELN details
     self.saveButtonW, self.saveButtonL = widgetAndLayout('H', self.mainL, top='m')
     self.saveButtonL.addStretch(1)
     self.btnSave = TextButton('Save changes', self, [Command.SAVE], self.saveButtonL, 'Save all changes')
     self.btnSave.hide()
+    self.btnDatabase = TextButton('ELN details', self, [Command.SHOW,'Database'], self.mainL, \
+                                  'Show / hide database details', checkable= True, style='margin-top: 15px; font-weight: bold;')
+    self.metaDatabaseW, self.metaDatabaseL = widgetAndLayout('V', self.mainL, top='s', left='m', right='m', bottom='s')
+    self.metaDatabaseW.setStyleSheet(f"""
+      QWidget {{
+        {sectionBg}
+        border-radius: 6px;
+        padding: 10px;
+        margin: 5px;
+      }}
+    """)
     self.mainL.addStretch(1)
 
 
@@ -292,7 +343,7 @@ class Details(QScrollArea):
       
       # Show name field
       nameW, nameL = widgetAndLayout('H', self.metaDetailsL, top='s', bottom='s')
-      nameL.addWidget(QLabel('Name: '))
+      nameL.addWidget(QLabel('<b>Name</b>: '))
       nameEdit = QLineEdit(self.doc.get('name', ''))
       nameEdit.setValidator(QRegularExpressionValidator('[\\w\\ .-]+'))
       nameL.addWidget(nameEdit, stretch=1)
@@ -302,7 +353,7 @@ class Details(QScrollArea):
       # Show tags field
       if any(i['name'] == 'tags' for i in dataHierarchyNode):
         tagW, tagL = widgetAndLayout('H', self.metaDetailsL, top='s', bottom='s')
-        tagL.addWidget(QLabel('Tags: '))
+        tagL.addWidget(QLabel('<b>Tags</b>: '))
         tags = self.doc.get('tags', [])
         tagsList = [t for t in tags if not re.match(r'^_\d$', t)]  # Exclude rating tags
         tagStr = ' '.join(tagsList)
@@ -322,7 +373,7 @@ class Details(QScrollArea):
               if name == 'comment':
                 # Handle comment
                 commentW, commentL = widgetAndLayout('H', self.metaDetailsL, top='s', bottom='s')
-                commentL.addWidget(QLabel('Comment: '), alignment=Qt.AlignmentFlag.AlignTop)
+                commentL.addWidget(QLabel('<b>Comment</b>: '), alignment=Qt.AlignmentFlag.AlignTop)
                 commentEdit = QTextEdit()
                 commentEdit.setPlainText(self.doc.get('comment', ''))
                 commentEdit.setReadOnly(False)
@@ -335,7 +386,9 @@ class Details(QScrollArea):
             if group:
               value = self.doc.get(group, {}).get(name, '')
             else:
-              value = self.doc.get(name, '')
+              # For top-level fields, check both with and without dot prefix
+              # Reference fields are stored with dot prefix (e.g., '.workflow/procedure')
+              value = self.doc.get(f'.{name}', self.doc.get(name, ''))
             
             # Skip if empty and not in doc (but show in edit mode)
             if not value and name not in self.doc and group and name not in self.doc.get(group, {}):
@@ -401,9 +454,45 @@ class Details(QScrollArea):
               # Nested field
               value = self.doc.get(group, {}).get(name, '')
             else:
-              # Top-level field - remove leading dot if present
-              docKey = name.lstrip('.')
-              value = self.doc.get(docKey, '')
+              # Top-level field - use same logic as form.py line 316-317
+              # Form does: self.doc.get(group, {}).get(row.name, ('','','',''))
+              # where group is '' for top-level fields
+              # The hierarchy() function converts flat keys like '.workflow/procedure' 
+              # into nested structure: {'': {'workflow/procedure': value}}
+              groupDict = self.doc.get('', {})
+              if isinstance(groupDict, dict):
+                defaultValue = groupDict.get(name, None)
+                # Handle tuple values (value, unit, label, PURL) - extract just the value
+                if isinstance(defaultValue, tuple) and len(defaultValue) >= 1:
+                  value = defaultValue[0]
+                elif defaultValue is not None:
+                  value = defaultValue
+                else:
+                  value = None
+              else:
+                value = None
+              
+              # If not found in nested structure, try dot-prefixed key directly (fallback)
+              if value is None:
+                dotKey = f'.{name.lstrip(".")}'
+                defaultValue = self.doc.get(dotKey, None)
+                if isinstance(defaultValue, tuple) and len(defaultValue) >= 1:
+                  value = defaultValue[0]
+                elif defaultValue is not None:
+                  value = defaultValue
+                else:
+                  value = ''
+              
+              # Default to empty string if not found
+              if value is None:
+                value = ''
+              
+              # Debug logging for reference fields
+              if name in ['workflow/procedure', 'sample', 'device'] or '/' in name:
+                allKeys = list(self.doc.keys())
+                dotKeys = [k for k in allKeys if k.startswith(".")]
+                hasEmptyGroup = '' in self.doc and isinstance(self.doc[''], dict)
+                logging.debug(f'Reading field {name}: value={repr(value)}, type={type(value)}, has_empty_group={hasEmptyGroup}, empty_group_keys={list(self.doc.get("", {}).keys())[:5] if hasEmptyGroup else []}, dotKeys={dotKeys[:10]}')
             
             # Always show fields from data hierarchy (even if empty, to show "- no link -" for list fields)
             if group:
@@ -413,6 +502,8 @@ class Details(QScrollArea):
             else:
               # Top-level field
               if name not in SORTED_DB_KEYS and name not in ['name', 'tags', 'comment', 'content', 'image']:
+                # Pass the name as-is (without dot) - addDocDetails will handle matching
+                # The value should already be read correctly with dot prefix check above
                 self.addDocDetails(self.metaDetailsL, name, value, dataHierarchyNode, groupPrefix='')
       
       # Always show metaDetailsW if we have any fields
@@ -532,24 +623,26 @@ class Details(QScrollArea):
     """
     if not key and isinstance(value,dict):
       return '\n'.join([self.addDocDetails(layout, k, v, dataHierarchyNode, groupPrefix) for k, v in value.items()])
-    # In non-edit mode, show fields even if empty if they're list fields (to show "- no link -")
-    # Only skip truly empty non-list fields
-    if not value and not self.editMode:
-      # Check if this is a list field - if so, show it even if empty
-      dataHierarchyItems = [dict(i) for i in dataHierarchyNode if i['name']==key]
+    # In non-edit mode, show all fields even if empty - display "N/A" for empty values
+    # BUT: Don't modify value if it's a list field - let the list field handling below deal with it
+    isListField = False
+    if not self.editMode:
+      # Check if this is a list field - if so, we'll handle it below
+      # Match by key name, handling dot-prefixed keys
+      keyName = key.lstrip('.')
+      dataHierarchyItems = [dict(i) for i in dataHierarchyNode if i['name']==keyName or i['name']==key]
       if dataHierarchyItems and dataHierarchyItems[0].get('list'):
-        # It's a list field, show it even if empty
-        pass  # Continue to show "- no link -"
-      else:
-        # Not a list field and empty - skip it
-        return ''
+        isListField = True
+      elif not value:
+        # Not a list field and empty - show "N/A" instead of skipping
+        value = 'N/A'
     link = False
     labelStr = ''
     if key=='tags':
       if self.editMode and layout is not None:
         # Editable tags - simple text input for now
         tagW, tagL = widgetAndLayout('H', layout, top='s', bottom='s')
-        tagL.addWidget(QLabel('Tags: '))
+        tagL.addWidget(QLabel('<b>Tags</b>: '))
         rating = ['\u2605'*int(i[1]) for i in value if re.match(r'^_\d$', i)]
         tags = [i for i in value if not re.match(r'^_\d$', i)]
         tagStr = ' '.join(tags)
@@ -561,50 +654,96 @@ class Details(QScrollArea):
       else:
         rating = ['\u2605'*int(i[1]) for i in value if re.match(r'^_\d$', i)]
         tags = [i for i in value if not re.match(r'^_\d$', i)]
-        labelStr = f'Rating: {rating[0]}' if rating else ''
-        labelStr = f'{labelStr}   Tags: '+' '.join(tags)
+        # Format tags with bold label like other fields
+        ratingStr = f'Rating: {rating[0]}' if rating else ''
+        tagsStr = ' '.join(tags) if tags else 'N/A'
+        labelStr = f'<b>Tags</b>: {ratingStr + "   " if ratingStr else ""}{tagsStr}'
         if layout is not None:
           label = QLabel(labelStr)
           label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+          # Style the label for better readability
+          label.setStyleSheet("""
+            QLabel {
+              padding: 6px 8px;
+              border-radius: 4px;
+              margin: 2px 0px;
+            }
+            QLabel:hover {
+              background-color: rgba(128, 128, 128, 30);
+            }
+          """)
           layout.addWidget(label)
     elif (isinstance(value,str) and '\n' in value) or key=='comment':        # long values with /s or comments
       labelW, labelL = widgetAndLayout('H', layout, top='s', bottom='s')
-      labelL.addWidget(QLabel(f'{key}: '), alignment=Qt.AlignmentFlag.AlignTop)
-      text = QTextEdit()                                                     # pylint: disable=qt-local-widget
-      if self.editMode:
-        text.setPlainText(value)  # Use plain text for editing
-        text.setReadOnly(False)
-        self.editableWidgets[key] = text
+      # Use bold label like other fields for consistency
+      labelL.addWidget(QLabel(f'<b>{key.capitalize()}</b>: '), alignment=Qt.AlignmentFlag.AlignTop)
+      
+      # For "N/A" values, use a simple label instead of QTextEdit for better visibility
+      if not self.editMode and value == 'N/A':
+        naLabel = QLabel('N/A')
+        naLabel.setStyleSheet("""
+          QLabel {
+            padding: 8px 12px;
+            border-radius: 4px;
+            background-color: rgba(128, 128, 128, 50);
+            color: rgba(100, 100, 100, 255);
+            font-size: 13px;
+            min-height: 30px;
+          }
+        """)
+        labelL.addWidget(naLabel, stretch=1)
       else:
-        text.setMarkdown(markdownEqualizer(value))
-        text.setReadOnly(True)
-      bgColor = self.comm.palette.get('secondaryDark', 'background-color')
-      fgColor = self.comm.palette.get('secondaryText', 'color')
-      text.setStyleSheet(f"QTextEdit {{ border: {'1px solid #888' if self.editMode else 'none'}; padding: 3px; {bgColor} {fgColor}}}")
-      try:                                    #Temporary debugging until June26 to identify the cause of issue
-        text.document().setTextWidth(labelW.width())
-      except Exception:
-        logging.error('text.document is something erroneous: %s, %s', type(text), type(text.document()))
-      if hasattr(self, 'rescaleTexts'):
+        text = QTextEdit()                                                     # pylint: disable=qt-local-widget
+        if self.editMode:
+          # In edit mode, use actual value (not "N/A")
+          displayValue = value if value != 'N/A' else ''
+          text.setPlainText(displayValue)  # Use plain text for editing
+          text.setReadOnly(False)
+          self.editableWidgets[key] = text
+        else:
+          # In non-edit mode, show markdown
+          text.setMarkdown(markdownEqualizer(value))
+          text.setReadOnly(True)
+        bgColor = self.comm.palette.get('secondaryDark', 'background-color')
+        fgColor = self.comm.palette.get('secondaryText', 'color')
+        text.setStyleSheet(f"QTextEdit {{ border: {'1px solid #888' if self.editMode else 'none'}; padding: 3px; {bgColor} {fgColor}}}")
+        try:                                    #Temporary debugging until June26 to identify the cause of issue
+          text.document().setTextWidth(labelW.width())
+        except Exception:
+          logging.error('text.document is something erroneous: %s, %s', type(text), type(text.document()))
+        if hasattr(self, 'rescaleTexts'):
+          self.textEditors.append(text)
+        height:int = text.document().size().toTuple()[1]                                    # type:ignore[index]
+        # Set minimum height to ensure readability
+        minHeight = 40 if height < 40 else height
+        text.setFixedHeight(minHeight)
         self.textEditors.append(text)
-      height:int = text.document().size().toTuple()[1]                                    # type:ignore[index]
-      text.setFixedHeight(height)
-      self.textEditors.append(text)
-      labelL.addWidget(text, stretch=1)
+        labelL.addWidget(text, stretch=1)
     else:
-      dataHierarchyItems = [dict(i) for i in dataHierarchyNode if i['name']==key]
+      # Match by key name, handling dot-prefixed keys
+      # The key might be 'workflow/procedure' but dataHierarchyNode has 'workflow/procedure' (no dot)
+      keyName = key.lstrip('.')
+      dataHierarchyItems = [dict(i) for i in dataHierarchyNode if i['name']==keyName or i['name']==key]
       docID = ''
+      # Debug: log what we found
+      if key in ['workflow/procedure', 'sample', 'device'] or '/' in key:
+        logging.debug(f'addDocDetails for {key}: value={value}, type={type(value)}, dataHierarchyItems={len(dataHierarchyItems)}, value_repr={repr(value)}')
       if len(dataHierarchyItems)==1 and 'list' in dataHierarchyItems[0] and dataHierarchyItems[0]['list'] and \
           ',' not in dataHierarchyItems[0]['list'] and ' ' not  in dataHierarchyItems[0]['list']:#choice among docType
         listDocType = dataHierarchyItems[0]['list']
         
         # Handle value - it could be a string, list, tuple, or empty
+        # Reference fields can be stored as string (docID) or list [docID]
         if isinstance(value, (list, tuple)) and len(value) > 0:
-          docIDValue = value[0]
+          docIDValue = value[0] if isinstance(value[0], str) else str(value[0])
         elif isinstance(value, str) and value:
           docIDValue = value
         else:
           docIDValue = ''
+        
+        # Debug logging for reference fields
+        if key in ['workflow/procedure', 'sample', 'device'] or '/' in key:
+          logging.debug(f'Reference field {key}: value={value}, docIDValue={docIDValue}, listDocType={listDocType}')
         
         # Check if we have the table data for this docType
         if listDocType not in self.idsTypesNames['type'].values:
@@ -616,26 +755,43 @@ class Details(QScrollArea):
           else:
             value = docIDValue if docIDValue else '- no link -'
         else:
-          # Data is available - convert docID to name
+          # Data is available - convert docID to name (same logic as form.py)
           if docIDValue:
-            names = list(self.idsTypesNames[(self.idsTypesNames.id==docIDValue) & (self.idsTypesNames.type==listDocType)]['name'])
+            # Ensure docIDValue is a string
+            docIDValue = str(docIDValue).strip()
+            # Filter the dataframe - same as form.py line 227-230
+            matching_rows = self.idsTypesNames[(self.idsTypesNames.id==docIDValue) & (self.idsTypesNames.type==listDocType)]
+            names = list(matching_rows['name']) if not matching_rows.empty else []
+            
             if len(names)==1:                                            # default find one item that we link to
               docID = docIDValue
-              value = '\u260D '+names[0]
+              value = '\u260D '+names[0]  # Same format as form displays
               link = True
             elif not names:
               # docID not found in table - might be invalid or deleted
-              value = f'Unknown ({docIDValue[:8]}...)' if docIDValue and len(docIDValue) > 8 else (docIDValue if docIDValue else '- no link -')
+              # Show the docID itself if it's valid, otherwise show "- no link -"
+              if docIDValue and re.match(r'^[a-z\-]-[a-z0-9]{32}$', docIDValue):
+                value = f'Unknown ({docIDValue[:8]}...)' if len(docIDValue) > 8 else docIDValue
+              else:
+                value = '- no link -'
             else:
               raise ValueError(f'list target exists multiple times. Key: {key}')
           else:
             # Empty value, no link
             value = '- no link -'
       elif isinstance(value, list):
-        value = ', '.join([str(i) for i in value])
-      if isinstance(value, tuple) and len(value)==4 and isDocID(value[0]):
-        value = 'Cannot resolve link'
-      labelStr = f'{key}: {value}'
+        if len(value) == 0:
+          value = 'N/A'
+        else:
+          value = ', '.join([str(i) for i in value])
+      # Handle empty string values - show as "N/A" (but not if it's already "N/A" from earlier)
+      elif isinstance(value, str) and value == '':
+        value = 'N/A'
+      # Check for tuple with docID that cannot be resolved
+      if isinstance(value, tuple) and len(value)==4:
+        if isDocID(value[0]):
+          value = 'Cannot resolve link'
+      labelStr = f'<b>{key.capitalize()}</b>: {value}'
       if isinstance(value, tuple) and len(value)==4:
         k,v = tuple2html(key, value)
         labelStr = f'{k}: {v}<br>'
@@ -651,10 +807,12 @@ class Details(QScrollArea):
             newValue[k] = v
         labelStr = f'{cssStyleHtmlEditors}{key}: {dict2ul(newValue)}'
       if layout is not None:
-        if self.editMode and not link and key not in ['id', 'type', 'branch'] and not isinstance(value, (dict, tuple)) and len(str(value)) < 200:
+        # ELN details (SORTED_DB_KEYS) should never be editable - always show as read-only
+        isELNDetail = key in SORTED_DB_KEYS
+        if self.editMode and not link and not isELNDetail and key not in ['id', 'type', 'branch'] and not isinstance(value, (dict, tuple)) and len(str(value)) < 200:
           # Make editable for simple fields (skip dicts, tuples, and very long values)
           fieldW, fieldL = widgetAndLayout('H', layout, top='s', bottom='s')
-          fieldL.addWidget(QLabel(f'{key.capitalize()}: '))
+          fieldL.addWidget(QLabel(f'<b>{key.capitalize()}</b>: '))
           
           # Check if this field has a list (dropdown) in dataHierarchyNode
           # Match by name and class/groupPrefix
@@ -735,6 +893,17 @@ class Details(QScrollArea):
           label = Label(labelStr, function=lambda x,y: self.clickLink(x,y) if link else None, docID=docID)
           label.setOpenExternalLinks(True)
           label.setWordWrap(True)
+          # Style the label for better readability
+          label.setStyleSheet("""
+            QLabel {
+              padding: 6px 8px;
+              border-radius: 4px;
+              margin: 2px 0px;
+            }
+            QLabel:hover {
+              background-color: rgba(128, 128, 128, 30);
+            }
+          """)
           layout.addWidget(label)
     return labelStr
 
@@ -834,10 +1003,24 @@ class Details(QScrollArea):
     Collect all edited values and save them via Task.EDIT_DOC
     """
     if not self.docID or not self.doc:
+      logging.warning('Cannot save: missing docID or doc')
       return
+    
+    if not self.editableWidgets:
+      logging.warning('No editable widgets found - nothing to save')
+      return
+    
+    # Get dataHierarchyNode to check field types
+    if self.doc['type'][0] not in self.comm.docTypesTitles:
+      from ..fixedStringsJson import defaultDataHierarchyNode
+      dataHierarchyNode = defaultDataHierarchyNode
+    else:
+      dataHierarchyNode = self.comm.dataHierarchyNodes[self.doc['type'][0]]
     
     # Create updated document
     updatedDoc = copy.deepcopy(self.doc)
+    
+    logging.debug(f'Saving changes. Editable widgets: {list(self.editableWidgets.keys())}')
     
     # Collect values from editable widgets
     for key, widget in self.editableWidgets.items():
@@ -848,28 +1031,73 @@ class Details(QScrollArea):
         
         # Check if currentData contains a valid docID
         if dataNew is not None and re.search(r'^[a-z\-]-[a-z0-9]{32}$', str(dataNew)) is not None:
-          value = dataNew  # Use docID
+          docIDValue = dataNew  # Use docID
         elif valueNew != '- no link -' and dataNew is None:
-          value = valueNew  # Use text value
+          docIDValue = valueNew  # Use text value
         else:
-          value = ''  # Empty selection
+          docIDValue = ''  # Empty selection
         
-        # Handle nested fields
+        # Get original value to determine structure
         if '.' in key:
+          group, field = key.split('.', 1)
+          if group not in updatedDoc:
+            updatedDoc[group] = {}
+          origValue = updatedDoc[group].get(field, '')
+        else:
+          origValue = updatedDoc.get(key, '')
+        
+        # Determine if this is a reference field (list field) that should be stored as a list
+        # Check dataHierarchyNode to see if this field has a 'list' property
+        isReferenceField = False
+        # Handle dot-prefixed keys (like '.workflow/procedure', '.sample', '.device')
+        fieldName = key.lstrip('.')
+        fieldItems = [item for item in dataHierarchyNode if item['name'] == fieldName or item['name'] == key]
+        if fieldItems:
+          fieldItem = fieldItems[0]
+          if fieldItem.get('list') and fieldItem['list'] and \
+             ',' not in fieldItem['list'] and ' ' not in fieldItem['list']:
+            isReferenceField = True
+        
+        # For reference fields, they should be stored as lists [docID] in the document
+        # The flatten function will enumerate lists, creating keys like "0" for the first element
+        # But updateDoc expects strings for properties with dots/slashes
+        # So we need to store as string (docID) for fields with dots/slashes in the key
+        if isReferenceField:
+          # Check if key has a dot or slash (like '.workflow/procedure')
+          if '.' in key or '/' in key:
+            # For keys with dots/slashes, store as string (docID) to match updateDoc expectations
+            value = docIDValue if docIDValue else ''
+          else:
+            # For other reference fields, store as list [docID]
+            value = [docIDValue] if docIDValue else []
+        elif isinstance(origValue, tuple) and len(origValue) == 4:
+          # Preserve tuple structure: (value, unit, label, PURL)
+          value = (docIDValue, origValue[1] if len(origValue) > 1 else '', 
+                  origValue[2] if len(origValue) > 2 else '', 
+                  origValue[3] if len(origValue) > 3 else '')
+        elif isinstance(origValue, list) and not isReferenceField:
+          # Preserve list structure if it was a list (but not a reference field)
+          value = [docIDValue] if docIDValue else []
+        else:
+          value = docIDValue
+        
+        # Store the value
+        # For reference fields that should have a dot prefix (like workflow/procedure -> .workflow/procedure)
+        # Check if this is a top-level reference field that needs a dot prefix
+        if isReferenceField and not key.startswith('.') and '.' not in key:
+          # This is a top-level reference field (like 'workflow/procedure', 'sample', 'device')
+          # It should be stored with a dot prefix ('.workflow/procedure', '.sample', '.device')
+          dotKey = f'.{key}'
+          updatedDoc[dotKey] = value
+        elif '.' in key and not key.startswith('.'):
+          # Nested field (like 'metaVendor.fieldName')
           group, field = key.split('.', 1)
           if group not in updatedDoc:
             updatedDoc[group] = {}
           updatedDoc[group][field] = value
         else:
-          # Top-level field - preserve tuple structure if it was a tuple
-          origValue = updatedDoc.get(key, '')
-          if isinstance(origValue, tuple) and len(origValue) == 4:
-            # Preserve tuple structure: (value, unit, label, PURL)
-            updatedDoc[key] = (value, origValue[1] if len(origValue) > 1 else '', 
-                              origValue[2] if len(origValue) > 2 else '', 
-                              origValue[3] if len(origValue) > 3 else '')
-          else:
-            updatedDoc[key] = value
+          # Already has dot prefix or is a regular field
+          updatedDoc[key] = value
       elif isinstance(widget, QLineEdit):
         value = widget.text().strip()
         if key == 'name':
@@ -920,16 +1148,34 @@ class Details(QScrollArea):
         else:
           updatedDoc[key] = value
     
-    # Remove empty fields to keep document clean (except for required fields)
-    # But keep fields that were explicitly set to empty strings in edit mode
-    # This is handled by the backend, so we just send what we have
+    # Ensure document ID is preserved
+    if 'id' not in updatedDoc or updatedDoc['id'] != self.docID:
+      updatedDoc['id'] = self.docID
+    
+    # Ensure document type is preserved
+    if 'type' not in updatedDoc:
+      updatedDoc['type'] = self.doc.get('type', [''])
     
     # Emit task to save changes
-    self.comm.uiRequestTask.emit(Task.EDIT_DOC, {'doc': updatedDoc})
+    logging.info(f'Saving changes for document {self.docID}')
+    logging.debug(f'Updated document keys: {list(updatedDoc.keys())}')
+    logging.debug(f'Editable widgets processed: {list(self.editableWidgets.keys())}')
     
-    # Exit edit mode and refresh
+    # Get project ID from branch if available
+    newProjID = None
+    if 'branch' in updatedDoc and updatedDoc['branch'] and len(updatedDoc['branch']) > 0:
+      branch = updatedDoc['branch'][0]
+      if 'stack' in branch and branch['stack']:
+        newProjID = [branch['stack'][0]]  # Project ID is first in stack
+    
+    # Send the updated document to the backend
+    # Backend expects both 'doc' and 'newProjID' keys
+    self.comm.uiRequestTask.emit(Task.EDIT_DOC, {'doc': updatedDoc, 'newProjID': newProjID})
+    
+    # Exit edit mode
     self.editMode = False
-    self.comm.changeDetails.emit(self.docID)  # Refresh details
+    # Refresh details to show updated values (will be updated when backend responds)
+    self.comm.changeDetails.emit(self.docID)
     return
 
 

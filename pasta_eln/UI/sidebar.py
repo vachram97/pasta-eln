@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any
 import pandas as pd
 from anytree import Node
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Property, Slot
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import QFrame, QLabel, QTreeWidgetItem, QVBoxLayout, QWidget
 from ..backendWorker.worker import Task
@@ -14,19 +14,67 @@ from .guiStyle import IconButton, TextButton, space, widgetAndLayout, widgetAndL
 
 class Sidebar(QWidget):
   """ Sidebar widget that includes the navigation items """
-  def __init__(self, comm:Communicate):
+  def __init__(self, comm:Communicate, mainWindow=None):
     super().__init__()
     self.comm = comm
+    self.mainWindow = mainWindow  # Store reference to mainWindow for direct access
     self.comm.changeSidebar.connect(self.paint)
     self.comm.backendThread.worker.beSendTable.connect(self.onGetData)
     self.projects = pd.DataFrame()
     self.sideBarWidth = self.comm.configuration['GUI']['sidebarWidth']
+    self._animatedWidth = self.sideBarWidth  # Custom property for animation
+
+    # Set background color for overlay mode - match details panel theme
+    # Set auto-fill background first to ensure background is painted
+    self.setAutoFillBackground(True)
+    if hasattr(self.comm, 'palette'):
+      # Use same background as details panel (background, not secondaryDark)
+      bgColor = self.comm.palette.get('background', 'background-color')
+      if bgColor:
+        self.setStyleSheet(f"""
+          QWidget {{
+            {bgColor}
+          }}
+        """)
+      else:
+        # Fallback if palette doesn't return a color
+        self.setStyleSheet("""
+          QWidget {
+            background-color: rgba(50, 50, 50, 255);
+          }
+        """)
+    else:
+      # Fallback background color
+      self.setStyleSheet("""
+        QWidget {
+          background-color: rgba(50, 50, 50, 255);
+        }
+      """)
 
     # GUI elements
     mainL = QVBoxLayout()
-    self.setFixedWidth(self.sideBarWidth)
+    # Don't set fixed width when used as overlay - width will be set by geometry
+    # self.setFixedWidth(self.sideBarWidth)  # Commented out for overlay mode
     mainL.setContentsMargins(space['s'],space['s'],space['0'],space['s'])
     mainL.setSpacing(15)
+    
+    # Add close button at the top right
+    closeButtonW, closeButtonL = widgetAndLayout('H', mainL, spacing='s')
+    closeButtonL.addStretch()  # Push button to the right
+    from .guiStyle import IconButton
+    self.closeButton = IconButton('mdi.window-close', self, [Command.CLOSE_SIDEBAR], closeButtonL, 'Close sidebar')
+    self.closeButton.setStyleSheet("""
+      QPushButton {
+        background-color: transparent;
+        border: none;
+        padding: 2px;
+      }
+      QPushButton:hover {
+        background-color: rgba(255, 255, 255, 30);
+        border-radius: 3px;
+      }
+    """)
+    
     if self.comm.configuration['GUI']['showProjectBtn']=='Yes':
       TextButton('List projects', self, [Command.LIST_PROJECTS], mainL, 'Show list of all projects')
     _, self.projectsListL = widgetAndLayout('V', mainL, spacing='m')
@@ -168,6 +216,18 @@ class Sidebar(QWidget):
       self.comm.changeProject.emit(projID, item)
     elif command[0] is Command.SCAN_PROJECT:
       self.comm.uiRequestTask.emit(Task.SCAN, {'docID':self.comm.projectID})
+    elif command[0] is Command.CLOSE_SIDEBAR:
+      # Hide sidebar by calling hideSidebar on mainWindow
+      if self.mainWindow and hasattr(self.mainWindow, 'hideSidebar'):
+        self.mainWindow.hideSidebar()
+      else:
+        # Fallback: try to find mainWindow through parent
+        parent = self.parent()
+        while parent:
+          if hasattr(parent, 'hideSidebar'):
+            parent.hideSidebar()
+            break
+          parent = parent.parent()
     else:
       logging.error('Sidebar menu unknown: %s',command, exc_info=True)
     return
@@ -205,6 +265,21 @@ class Sidebar(QWidget):
     """
     self.paint('redraw')
     return super().resizeEvent(event)
+  
+  def getAnimatedWidth(self) -> int:
+    """Get animated width property"""
+    return self._animatedWidth
+  
+  def setAnimatedWidth(self, width: int) -> None:
+    """Set animated width property and update geometry"""
+    self._animatedWidth = width
+    # Update geometry to reflect new width
+    currentGeometry = self.geometry()
+    if currentGeometry.width() != width:
+      self.setGeometry(currentGeometry.x(), currentGeometry.y(), width, currentGeometry.height())
+  
+  # Register property for animation
+  animatedWidth = Property(int, getAnimatedWidth, setAnimatedWidth)
 
 
 class Command(Enum):
@@ -213,3 +288,4 @@ class Command(Enum):
   SHOW_PROJECT = 2
   SCAN_PROJECT = 3
   LIST_PROJECTS= 4
+  CLOSE_SIDEBAR = 5

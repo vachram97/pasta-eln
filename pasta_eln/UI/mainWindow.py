@@ -8,8 +8,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, QRect, QUrl, Slot, Qt
-from PySide6.QtGui import QDesktopServices, QIcon, QMouseEvent, QPixmap, QShortcut
-from PySide6.QtWidgets import QFileDialog, QLabel, QMainWindow
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QMouseEvent, QPixmap, QShortcut, QPainter
+from PySide6.QtWidgets import QFileDialog, QLabel, QMainWindow, QPushButton
+import qtawesome as qta
 from pasta_eln import __version__
 from ..backendWorker.worker import Task
 from ..fixedStringsJson import CONF_FILE_NAME, AboutMessage, shortcuts
@@ -20,11 +21,65 @@ from .data_hierarchy.editor import SchemeEditor
 from .definitions.editor import Editor as DefinitionsEditor
 from .form import Form
 from .guiCommunicate import Communicate
-from .guiStyle import Action, ScrollMessageBox, widgetAndLayout
+from .guiStyle import Action, IconButton, ScrollMessageBox, widgetAndLayout
 from .messageDialog import showMessage
 from .palette import Palette
 from .repositories.uploadGUI import UploadGUI
 from .sidebar import Sidebar
+
+
+class VerticalLabel(QLabel):
+  """Label with vertical text"""
+  def __init__(self, text: str, parent=None):
+    super().__init__(text, parent)
+    self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+  
+  def paintEvent(self, event):
+    # Log that paintEvent is being called
+    logging.debug(f'VerticalLabel paintEvent called: text="{self.text()}", size={self.width()}x{self.height()}, visible={self.isVisible()}')
+    
+    painter = QPainter(self)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    
+    # Get text to display
+    text = self.text()
+    if not text:
+      logging.debug('VerticalLabel: No text to display')
+      return
+    
+    # Get label dimensions
+    w = self.width()
+    h = self.height()
+    
+    if w <= 0 or h <= 0:
+      logging.debug(f'VerticalLabel: Invalid size {w}x{h}')
+      return
+    
+    # Get text color - always use white for visibility
+    textColor = QColor(255, 255, 255)
+    painter.setPen(textColor)
+    
+    # Set up font
+    font = self.font()
+    font.setBold(True)
+    font.setPointSize(12)
+    painter.setFont(font)
+    
+    # Rotate the painter 270 degrees around the center so text reads from bottom to top
+    painter.save()
+    # Translate to center
+    painter.translate(w / 2, h / 2)
+    # Rotate 270 degrees (or -90)
+    painter.rotate(270)
+    # Translate back - after rotation, width and height are swapped
+    painter.translate(-h / 2, -w / 2)
+    
+    # Draw the text - after rotation, we draw in the swapped coordinate system
+    # The text rectangle is now h (height) wide and w (width) tall
+    painter.drawText(0, 0, h, w, Qt.AlignmentFlag.AlignCenter, text)
+    painter.restore()
+    
+    logging.debug(f'VerticalLabel: Text drawn successfully')
 
 
 class MainWindow(QMainWindow):
@@ -46,6 +101,9 @@ class MainWindow(QMainWindow):
       configWindow.exec()
       self.setCentralWidget(QLabel('ERROR: No configuration present!'))
       return
+    # Initialize sidebar state early, before connecting signals
+    self.sidebarHidden = False
+    
     self.comm.formDoc.connect(self.formDoc)
     self.comm.changeSidebar.connect(self.paint)
     self.comm.backendThread.worker.beSendTaskReport.connect(self.showReport)
@@ -100,20 +158,101 @@ class MainWindow(QMainWindow):
     mainWidget, mainLayout = widgetAndLayout('H')
     self.setCentralWidget(mainWidget)                                   # Set the central widget of the Window
     body = Body(self.comm)                                                             # body with information
-    self.sidebar = Sidebar(self.comm)                                                   # sidebar with buttons
-    mainLayout.addWidget(self.sidebar)
+    # Add body to layout (sidebar will be overlaid on top, not in layout)
     mainLayout.addWidget(body)
     
+    # Create sidebar as overlay widget (not in layout, so it doesn't move other panels)
+    self.sidebar = Sidebar(self.comm, mainWindow=self)
+    self.sidebar.setParent(mainWidget)  # Set parent but don't add to layout
+    # Position sidebar initially (will be updated on show/resize)
+    sidebarWidth = self.comm.configuration['GUI']['sidebarWidth']
+    self.sidebar.setGeometry(0, 0, sidebarWidth, mainWidget.height())
+    self.sidebar.raise_()  # Ensure it's on top
+    # Hide sidebar initially - tab will be shown instead
+    self.sidebar.hide()
+    
+    # Create sidebar tab button (appears when sidebar is hidden)
+    # The button will be the whole tab, with text inside
+    self.sidebarTab = QPushButton(self)
+    # Put text directly on button - simpler approach
+    self.sidebarTab.setText('P\nr\no\nj\ne\nc\nt\ns')  # Vertical text using newlines
+    self.sidebarTab.setToolTip('Show project list')
+    # Button size will be set dynamically to cover the whole tab area
+    self.sidebarTab.setStyleSheet("""
+      QPushButton {
+        background-color: rgba(100, 100, 100, 200);
+        border: 1px solid rgba(150, 150, 150, 255);
+        border-left: none;
+        border-radius: 0px 8px 8px 0px;
+        padding: 2px;
+        color: white;
+        font-weight: bold;
+        font-size: 12px;
+      }
+      QPushButton:hover {
+        background-color: rgba(120, 120, 120, 220);
+      }
+    """)
+    self.sidebarTab.clicked.connect(self.showSidebar)
+    # Set initial position off-screen so it doesn't appear at (0,0) before positioning
+    self.sidebarTab.setGeometry(-100, -100, 40, 120)  # Position off-screen initially (updated to match new size)
+    self.sidebarTab.hide()  # Initially hidden
+    self.sidebarTab.raise_()  # Make sure it's on top
+    
+    # Create label with vertical text (will be positioned on top of button)
+    self.sidebarTabLabel = VerticalLabel('Projects', self)
+    # Ensure text is set
+    self.sidebarTabLabel.setText('Projects')
+    # Set white text color explicitly
+    self.sidebarTabLabel.setStyleSheet("""
+      QLabel {
+        background-color: transparent;
+        color: white;
+        font-weight: bold;
+        font-size: 12px;
+      }
+    """)
+    # Ensure label is visible and on top
+    self.sidebarTabLabel.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)  # Allow clicks to pass through to button
+    # Set minimum size to ensure it can be painted
+    self.sidebarTabLabel.setMinimumSize(100, 30)
+    # Set initial position off-screen
+    self.sidebarTabLabel.setGeometry(-100, -100, 100, 30)  # Position off-screen initially
+    self.sidebarTabLabel.hide()  # Initially hidden
+    # Make sure label is always on top of button
+    self.sidebarTabLabel.setParent(self)
+    self.sidebarTabLabel.raise_()
+    # Ensure the label is enabled and can be painted
+    self.sidebarTabLabel.setEnabled(True)
+    # Set visible flag (will be shown when sidebar is hidden)
+    self.sidebarTabLabel.setVisible(False)
+    
     # Auto-hide sidebar functionality
-    self.sidebarHidden = False
+    # Start with sidebar hidden and tab shown
+    self.sidebarHidden = True
     self.hoverZoneWidth = 10  # Width of hover zone on left border
     self.setMouseTracking(True)  # Enable mouse tracking for the main window
     mainWidget.setMouseTracking(True)  # Enable mouse tracking for central widget
     body.setMouseTracking(True)  # Enable mouse tracking for body
     
     # Animation for sidebar show/hide
-    self.sidebarAnimation = QPropertyAnimation(self.sidebar, b"maximumWidth")
+    # Use custom animatedWidth property for overlay mode
+    self.sidebarAnimation = QPropertyAnimation(self.sidebar, b"animatedWidth")
     self.sidebarAnimation.setDuration(200)  # 200ms animation
+    # Connect animation to update tab position
+    self.sidebarAnimation.valueChanged.connect(self.updateTabPositionWithSidebar)
+    
+    # Show the tab initially since sidebar is hidden
+    self.updateSidebarTabPosition()
+    if self.sidebarTab.geometry().y() >= 0:
+      self.sidebarTab.show()
+      self.sidebarTab.raise_()
+      if hasattr(self, 'sidebarTabLabel'):
+        self.sidebarTabLabel.show()
+        self.sidebarTabLabel.setVisible(True)
+        self.sidebarTabLabel.raise_()
+        self.sidebarTabLabel.update()
+        self.sidebarTabLabel.repaint()
     
     # Install event filter on body and sidebar to detect mouse movements
     body.installEventFilter(self)
@@ -156,25 +295,151 @@ class MainWindow(QMainWindow):
   
   def hideSidebar(self) -> None:
     """Hide the sidebar with animation"""
+    # Safety check - initialize if not already set
+    if not hasattr(self, 'sidebarHidden'):
+      self.sidebarHidden = False
     if not self.sidebarHidden:
       self.sidebarHidden = True
-      currentWidth = self.sidebar.width() if self.sidebar.width() > 0 else self.comm.configuration['GUI']['sidebarWidth']
+      currentWidth = self.sidebar._animatedWidth if hasattr(self.sidebar, '_animatedWidth') else (self.sidebar.width() if self.sidebar.width() > 0 else self.comm.configuration['GUI']['sidebarWidth'])
       self.sidebarAnimation.setStartValue(currentWidth)
       self.sidebarAnimation.setEndValue(0)
       self.sidebarAnimation.start()
-      self.sidebar.setMaximumWidth(0)
-      self.sidebar.hide()
+      # Don't hide immediately - let animation complete
+      # The sidebar will be hidden when animation finishes (width becomes 0)
+      # Position the tab button first, then show it
+      self.updateSidebarTabPosition()
+      # Only show if position was successfully calculated (y >= 0 means valid position)
+      if self.sidebarTab.geometry().y() >= 0:
+        self.sidebarTab.show()
+        self.sidebarTab.raise_()
+        # Also show label if it exists (for backward compatibility)
+        if hasattr(self, 'sidebarTabLabel'):
+          self.sidebarTabLabel.show()
+          self.sidebarTabLabel.setVisible(True)
+          self.sidebarTabLabel.raise_()
+          self.sidebarTabLabel.update()
+          self.sidebarTabLabel.repaint()
   
   def showSidebar(self) -> None:
     """Show the sidebar with animation"""
+    # Safety check - initialize if not already set
+    if not hasattr(self, 'sidebarHidden'):
+      self.sidebarHidden = False
     if self.sidebarHidden:
       self.sidebarHidden = False
       sidebarWidth = self.comm.configuration['GUI']['sidebarWidth']
-      self.sidebar.setMaximumWidth(sidebarWidth)
+      
+      # Position sidebar absolutely at left edge (overlay style)
+      mainWidget = self.centralWidget()
+      if mainWidget:
+        sidebarHeight = mainWidget.height()
+        self.sidebar.setGeometry(0, 0, sidebarWidth, sidebarHeight)
+        # Initialize animated width
+        self.sidebar._animatedWidth = 0  # Start from 0 for animation
+      
       self.sidebar.show()
+      self.sidebar.raise_()  # Ensure sidebar is on top
+      # Position tab at the right edge of sidebar initially
+      self.updateSidebarTabPosition()
+      if self.sidebarTab.geometry().y() >= 0:
+        self.sidebarTab.show()
+        self.sidebarTab.raise_()
+        if hasattr(self, 'sidebarTabLabel'):
+          self.sidebarTabLabel.show()
+          self.sidebarTabLabel.raise_()
+      # Start animation - tab will move with sidebar via updateTabPositionWithSidebar
       self.sidebarAnimation.setStartValue(0)
       self.sidebarAnimation.setEndValue(sidebarWidth)
       self.sidebarAnimation.start()
+  
+  def updateTabPositionWithSidebar(self, width: int) -> None:
+    """Update tab position as sidebar animates"""
+    if not hasattr(self, 'sidebarTab') or not self.sidebarTab:
+      return
+    # Move tab to follow the sidebar's right edge
+    if self.sidebar.isVisible():
+      # Tab should be at the right edge of the sidebar
+      tabY = self.sidebarTab.geometry().y()
+      if tabY < 0:
+        # Tab not positioned yet, get position from updateSidebarTabPosition
+        self.updateSidebarTabPosition()
+        tabY = self.sidebarTab.geometry().y()
+      if tabY >= 0:  # Only update if tab is visible
+        self.sidebarTab.setGeometry(width, tabY, self.sidebarTab.width(), self.sidebarTab.height())
+        # Update label position too
+        if hasattr(self, 'sidebarTabLabel') and self.sidebarTabLabel:
+          labelX = width + (self.sidebarTab.width() - self.sidebarTabLabel.width()) // 2
+          labelY = self.sidebarTabLabel.geometry().y()
+          self.sidebarTabLabel.setGeometry(labelX, labelY, self.sidebarTabLabel.width(), self.sidebarTabLabel.height())
+    else:
+      # Sidebar is hidden, move tab to left edge
+      tabY = self.sidebarTab.geometry().y()
+      if tabY >= 0:
+        self.sidebarTab.setGeometry(0, tabY, self.sidebarTab.width(), self.sidebarTab.height())
+        if hasattr(self, 'sidebarTabLabel') and self.sidebarTabLabel:
+          labelX = (self.sidebarTab.width() - self.sidebarTabLabel.width()) // 2
+          labelY = self.sidebarTabLabel.geometry().y()
+          self.sidebarTabLabel.setGeometry(labelX, labelY, self.sidebarTabLabel.width(), self.sidebarTabLabel.height())
+  
+  def updateSidebarTabPosition(self) -> None:
+    """Update the position of the sidebar tab button"""
+    if not self.sidebarTab or not self.sidebarTabLabel:
+      return
+      
+    # Always update position, even if not visible yet (so it's ready when shown)
+    # Position tab on left edge at 1/3 of window height from top
+    # Use geometry() to get actual window size, accounting for frame
+    windowGeometry = self.geometry()
+    windowHeight = windowGeometry.height()
+    
+    # If window height is too small, don't position (wait for proper size)
+    if windowHeight < 200:
+      return
+    
+    menuBarHeight = self.menuBar().height() if self.menuBar() else 0
+    availableHeight = windowHeight - menuBarHeight
+    
+    # Tab dimensions - make it wide enough to be the whole tab
+    tabWidth = 40  # Width of the tab (increased from 30)
+    tabHeight = 120  # Height of the tab (increased from 100)
+    
+    # Position at 1/3 of available height from top
+    # Use window-relative coordinates (0, 0 is top-left of window content area)
+    tabY = menuBarHeight + (availableHeight // 3) - (tabHeight // 2)
+    # Ensure tab doesn't go outside window bounds
+    tabY = max(menuBarHeight, min(tabY, windowHeight - tabHeight))
+    
+    # Set button position - if sidebar is visible, position at right edge of sidebar
+    # Otherwise, position at left edge (x=0)
+    if hasattr(self, 'sidebar') and self.sidebar and self.sidebar.isVisible():
+      sidebarX = self.sidebar.x() + self.sidebar.width()
+      tabX = sidebarX
+    else:
+      tabX = 0
+    
+    self.sidebarTab.setGeometry(tabX, tabY, tabWidth, tabHeight)
+    
+    # Position the vertical text label to cover the entire button area
+    # The label will be rotated 270 degrees, so width/height are swapped
+    # Button is 40x120, so label should be 120x40 (swapped) to fill the button after rotation
+    # After 270° rotation: label width becomes text height, label height becomes text width
+    labelWidth = tabHeight  # 120 - label width (becomes height of rotated text)
+    labelHeight = tabWidth  # 40 - label height (becomes width of rotated text)
+    # Center the label on the button - use button's position
+    buttonX = self.sidebarTab.x()
+    buttonY = self.sidebarTab.y()
+    # Center horizontally and vertically on the button
+    labelX = buttonX + (self.sidebarTab.width() - labelHeight) // 2
+    labelY = buttonY + (self.sidebarTab.height() - labelWidth) // 2
+    # Adjust vertical position to move text slightly (e.g., move it up by a few pixels)
+    # This centers the text better within the tab
+    labelY = buttonY + (self.sidebarTab.height() - labelWidth) // 2 - 2  # Move up 2px for better centering
+    # setGeometry(x, y, width, height) - label is 100 wide, 30 tall
+    self.sidebarTabLabel.setGeometry(labelX, labelY, labelWidth, labelHeight)
+    # Ensure label is updated and repainted after positioning
+    if self.sidebarTabLabel.isVisible():
+      self.sidebarTabLabel.update()
+      self.sidebarTabLabel.repaint()
   
   def eventFilter(self, obj: QObject, event: QEvent) -> bool:
     """
@@ -196,12 +461,18 @@ class MainWindow(QMainWindow):
       
       # If mouse is over sidebar, keep it visible
       if obj == self.sidebar:
+        # Safety check
+        if not hasattr(self, 'sidebarHidden'):
+          self.sidebarHidden = False
         if self.sidebarHidden and self.comm.projectID and self.comm.projectID != '':
           self.showSidebar()
         return False  # Let sidebar handle its own events
       
       # Only handle auto-hide/show if a project is open
       if self.comm.projectID and self.comm.projectID != '':
+        # Safety check
+        if not hasattr(self, 'sidebarHidden'):
+          self.sidebarHidden = False
         if self.sidebarHidden:
           # Sidebar is hidden - show it if mouse is near left border
           if mouseX <= self.hoverZoneWidth:
@@ -231,6 +502,24 @@ class MainWindow(QMainWindow):
     return
 
 
+  def resizeEvent(self, event) -> None:
+    """Handle window resize - update sidebar tab position"""
+    super().resizeEvent(event)
+    # Update sidebar position if it's visible (overlay style)
+    if hasattr(self, 'sidebar') and self.sidebar and self.sidebar.isVisible():
+      mainWidget = self.centralWidget()
+      if mainWidget:
+        sidebarWidth = self.comm.configuration['GUI']['sidebarWidth']
+        sidebarHeight = mainWidget.height()
+        self.sidebar.setGeometry(0, 0, sidebarWidth, sidebarHeight)
+    
+    # Always update tab position on resize if sidebar is hidden
+    if self.sidebarHidden and hasattr(self, 'sidebarTab') and self.sidebarTab:
+      self.updateSidebarTabPosition()
+      # Force label to repaint on resize
+      if hasattr(self, 'sidebarTabLabel') and self.sidebarTabLabel and self.sidebarTabLabel.isVisible():
+        self.sidebarTabLabel.update()
+  
   def closeEvent(self, event:QEvent) -> None:
     """
     Handle window close event - cleanup of backend thread
